@@ -1,0 +1,216 @@
+---
+title: "Course 8 Project"
+author: "Nupur Sinha"
+date: "5/30/2020"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Practical Machine Learning: Human Activity Recognition
+
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, our goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants and predict the manner in which they did the exercise. This is the "classe" variable in the training set. 
+
+```{r, echo=TRUE}
+# Loading all required libraries
+library(AppliedPredictiveModeling)
+library(caret)
+library(knitr)
+library(dplyr)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+library(gbm)
+```
+
+##Reading the data
+
+The data for this project comes from this source: http://groupware.les.inf.puc-rio.br/har. 
+
+###Train set
+
+```{r, echo=TRUE}
+
+train_file_name <- "pml-training.csv"
+train_fileUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+
+if(!file.exists(train_file_name)) {
+  download.file(train_fileUrl, train_file_name, method = "curl")
+}
+
+training <- read.csv(file = train_file_name, header = T)
+
+dim(training)
+str(training)
+
+unique(training$classe)
+```
+
+###Validation set
+
+```{r, echo=TRUE}
+
+validation_set_file_name <- "pml-testing.csv"
+validation_set_fileUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+if(!file.exists(validation_set_file_name)) {
+  download.file(validation_set_fileUrl, validation_set_file_name, method = "curl")
+}
+
+validation_set  <- read.csv(file = validation_set_file_name, header = T)
+dim(validation_set)
+
+```
+
+##Cleaning the data
+
+Before we build models, we need to clean the data. 
+
+1. There are some identification columns (username, etc., columns 1 to 7) that we can exclude from our analysis.
+2. We will then exclude any variables that have near zero variance.
+3. We will also exclude any variables that has zero to very low fill rate.
+
+Whatever preprocessing and transformation we apply to train set, we will apply the same to the validation set.
+
+```{r}
+set.seed(123)
+
+# 1. Exclude identification variables i.e. columns 1 to 7
+
+training <- training[, -(1:7)]
+validation_set  <- validation_set[, -(1:7)]
+
+dim(training)
+dim(validation_set)
+
+# 2. Exclude variables with near zero variation
+
+nzv_var <- nearZeroVar(training)
+training <- training[, -nzv_var]
+validation_set  <- validation_set[, -nzv_var]
+
+dim(training)
+dim(validation_set)
+
+# 3. Exclude variables with very zero to very low fill rate 
+
+training<- training[, colSums(is.na(training)) == 0]
+validation_set <- validation_set[, colSums(is.na(validation_set)) == 0]
+dim(training)
+dim(validation_set)
+
+```
+
+###Create train and test sets
+
+```{r}
+
+inTrain <- createDataPartition(training$classe, p = 0.7, list = FALSE)
+trainData <- training[inTrain, ]
+testData <- training[-inTrain, ]
+dim(trainData)
+dim(testData)
+
+```
+
+## Building models
+
+We will build three models along with cross validation method using the train data and predict on the test set. We will compare the accuracy of the three models to pick the best one to predict on the validation set.
+
+1. Decision tree model
+
+```{r}
+# Cross validation 
+fitControl <- trainControl(method='cv', number = 3)
+
+# Decision Tree model
+modFit_decision_tree <- train(classe~., data=trainData, method="rpart", trControl=fitControl)
+modFit_decision_tree$finalModel
+
+# Plot 
+fancyRpartPlot(modFit_decision_tree$finalModel)
+
+# Predict on the test data
+pred_decision_tree <- predict(modFit_decision_tree, newdata = testData)
+
+# Accuracy of the decision tree model
+decision_tree_cm <- confusionMatrix(testData$classe, pred_decision_tree)
+decision_tree_cm
+decision_tree_accuracy <- decision_tree_cm$overall[1]
+decision_tree_accuracy
+
+```
+
+Accuracy of the decision tree model is only 0.55 => Out of sample error is 0.45 which is high
+
+2. Random forest model
+
+```{r}
+# Cross validation 
+controlRF <- trainControl(method = "cv", number = 3, verboseIter = FALSE)
+
+# Random forest model
+modFit_rf  <- train(classe~., method = "rf", data = trainData, trControl=controlRF)
+
+# Plot
+plot(modFit_rf, main="RF Model Accuracy by number of predictors")
+plot(modFit_rf$finalModel, main="Model error of Random forest model by number of trees")
+
+# Predict on the test data
+pred_rf <- predict(modFit_rf, newdata = testData)
+
+# Accuracy of the random forest model
+rf_cm <- confusionMatrix(testData$classe, pred_rf)
+rf_cm
+rf_accuracy <- rf_cm$overall[1]
+rf_accuracy
+
+```
+
+Accuracy of the random forest model is 0.9930331 => Out of sample error is 0.0069
+
+3. GBM
+
+```{r}
+# Cross validation 
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+
+# GBM
+modFit_gbm <- train(classe ~ ., method = "gbm", data = trainData, trControl=controlGBM, verbose = F)
+
+# Plot
+plot(modFit_gbm)
+
+# Predict on the test data
+pred_gbm <- predict(modFit_gbm, newdata = testData)
+
+# Accuracy of GBM
+gbm_cm <- confusionMatrix(testData$classe, pred_gbm)
+gbm_cm
+gbm_accuracy <- gbm_cm$overall[1]
+gbm_accuracy
+
+```
+
+Accuracy of GBM is 0.9604078 => Out of sample error is 0.039
+
+##Conclusion
+
+The accuracy of the 3 modeling methods used are as follows:
+
+1. Decision Tree : 0.7368
+2. Random Forest : 0.9963
+3. GBM : 0.9839
+
+Picking random forest model as it had the best accuracy and applying the best model to the validation set to get the predictions
+
+```{r}
+pred_validation_set <- predict(modFit_rf, newdata = validation_set)
+pred_validation_set
+```
+
