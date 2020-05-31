@@ -5,6 +5,7 @@ date: "5/30/2020"
 output:
   html_document:
     df_print: paged
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -46,7 +47,6 @@ if(!file.exists(train_file_name)) {
 training <- read.csv(file = train_file_name, header = T)
 
 dim(training)
-str(training)
 
 unique(training$classe)
 ```
